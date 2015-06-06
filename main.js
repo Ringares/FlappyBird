@@ -1,111 +1,230 @@
-var game = new Phaser.Game(400,490,Phaser.AUTO,'gameDiv');
+var game = new Phaser.Game(320, 505, Phaser.AUTO, 'game'); //实例化game
+game.States = {}; //存放state对象
 
-var mainState = {
-	preload: function(){
-		game.stage.backgroundColor = '#71c5cf';
-		game.load.audio('jump','assets/jump.wav');
-		game.load.image('bird','assets/bird.png');
-		game.load.image('pipe','assets/pipe.png');
-	},
-	
-	create: function(){
-		//physics system
-		game.physics.startSystem(Phaser.Physics.ARCADE);
-		
-		//
-		this.jumpSound = game.add.audio('jump');
-		
-		//bird
-		this.bird = this.game.add.sprite(100,245,'bird');
-		game.physics.arcade.enable(this.bird);
-		this.bird.body.gravity.y=1000;
-		this.bird.anchor.setTo(-0.2,0.5)
-		
-		//pipe
-		this.pipes=game.add.group();
-		this.pipes.enableBody = true;
-		this.pipes.createMultiple(20,'pipe');
-		
-		this.timer = game.time.events.loop(1500,this.addRowOfPipes,this);
-		
+game.States.boot = function() {
+	this.preload = function() {
+		if (!game.device.desktop) {
+			this.scale.scaleMode = Phaser.ScaleManager.EXACT_FIT;
+			this.scale.forcePortrait = true;
+			this.scale.refresh();
+		}
+		game.load.image('loading', 'assets/preloader.gif');
+	};
+	this.create = function() {
+		game.state.start('preload'); //跳转到资源加载页面
+	};
+}
+
+game.States.preload = function() {
+	this.preload = function() {
+		var preloadSprite = game.add.sprite(35, game.height / 2, 'loading'); //创建显示loading进度的sprite
+		game.load.setPreloadSprite(preloadSprite);
+		//以下为要加载的资源
+		game.load.image('background', 'assets/background.png'); //背景
+		game.load.image('ground', 'assets/ground.png'); //地面
+		game.load.image('title', 'assets/title.png'); //游戏标题
+		game.load.spritesheet('bird', 'assets/bird.png', 34, 24, 3); //鸟
+		game.load.image('btn', 'assets/start-button.png'); //按钮
+		game.load.spritesheet('pipe', 'assets/pipes.png', 54, 320, 2); //管道
+		game.load.bitmapFont('flappy_font', 'assets/fonts/flappyfont/flappyfont.png', 'assets/fonts/flappyfont/flappyfont.fnt');
+		game.load.audio('fly_sound', 'assets/flap.wav'); //飞翔的音效
+		game.load.audio('score_sound', 'assets/score.wav'); //得分的音效
+		game.load.audio('hit_pipe_sound', 'assets/pipe-hit.wav'); //撞击管道的音效
+		game.load.audio('hit_ground_sound', 'assets/ouch.wav'); //撞击地面的音效
+
+		game.load.image('ready_text', 'assets/get-ready.png');
+		game.load.image('play_tip', 'assets/instructions.png');
+		game.load.image('game_over', 'assets/gameover.png');
+		game.load.image('score_board', 'assets/scoreboard.png');
+	}
+	this.create = function() {
+		game.state.start('menu');
+	}
+}
+
+game.States.menu = function() {
+	this.create = function() {
+		game.add.tileSprite(0, 0, game.width, game.height, 'background').autoScroll(-10, 0); //背景图
+		game.add.tileSprite(0, game.height - 112, game.width, 112, 'ground').autoScroll(-100, 0); //地板
+		var titleGroup = game.add.group(); //创建存放标题的组
+		titleGroup.create(0, 0, 'title'); //标题
+		var bird = titleGroup.create(190, 10, 'bird'); //添加bird到组里
+		bird.animations.add('fly'); //添加动画
+		bird.animations.play('fly', 12, true); //播放动画
+		titleGroup.x = 35;
+		titleGroup.y = 100;
+		titleGroup.alpha = 0;
+		game.add.tween(titleGroup).to({
+			alpha: 1
+		}, 1000, null, true, 0, 0, false);
+		game.add.tween(titleGroup).to({
+			y: 120
+		}, 1000, null, true, 0, Number.MAX_VALUE, true); //标题的缓动动画
+		var btn = game.add.button(game.width / 2, game.height / 2, 'btn', function() { //开始按钮
+			game.state.start('play');
+		});
+		btn.anchor.setTo(0.5, 0.5);
+	}
+}
+
+game.States.play = function() {
+	this.create = function() {
+		this.bg = game.add.tileSprite(0, 0, game.width, game.height, 'background'); //背景图
+		this.pipeGroup = game.add.group();
+		this.pipeGroup.enableBody = true;
+		this.ground = game.add.tileSprite(0, game.height - 112, game.width, 112, 'ground'); //地板
+		this.bird = game.add.sprite(50, 150, 'bird'); //鸟
+		this.bird.animations.add('fly');
+		this.bird.animations.play('fly', 12, true);
+		this.bird.anchor.setTo(0.5, 0.5);
+		game.physics.enable(this.bird, Phaser.Physics.ARCADE); //开启鸟的物理系统
+		this.bird.body.gravity.y = 0; //鸟的重力,未开始游戏，先先让他不动
+		game.physics.enable(this.ground, Phaser.Physics.ARCADE); //地面
+		this.ground.body.immovable = true; //固定不动
+
+		this.soundFly = game.add.sound('fly_sound');
+		this.soundScore = game.add.sound('score_sound');
+		this.soundHitPipe = game.add.sound('hit_pipe_sound');
+		this.soundHitGround = game.add.sound('hit_ground_sound');
+		this.scoreText = game.add.bitmapText(game.world.centerX - 20, 30, 'flappy_font', '0', 36);
+
+		this.readyText = game.add.image(game.width / 2, 40, 'ready_text'); //get ready 文字
+		this.playTip = game.add.image(game.width / 2, 300, 'play_tip'); //提示点击
+		this.readyText.anchor.setTo(0.5, 0);
+		this.playTip.anchor.setTo(0.5, 0);
+
+		this.hasStarted = false; //游戏是否已开始
+		game.time.events.loop(900, this.generatePipes, this);
+		game.time.events.stop(false);
+		game.input.onDown.addOnce(this.statrGame, this);
+	};
+	this.update = function() {
+		if (!this.hasStarted) return; //游戏未开始
+		game.physics.arcade.collide(this.bird, this.ground, this.hitGround, null, this); //与地面碰撞
+		game.physics.arcade.overlap(this.bird, this.pipeGroup, this.hitPipe, null, this); //与管道碰撞
+		if (!this.bird.inWorld) this.hitCeil(); //出了边界
+		if (this.bird.angle < 90) this.bird.angle += 2.5; //下降时头朝下
+		this.pipeGroup.forEachExists(this.checkScore, this); //分数检测和更新
+	}
+
+	this.statrGame = function() {
+		this.gameSpeed = 200; //游戏速度
+		this.gameIsOver = false;
+		this.hasHitGround = false;
+		this.hasStarted = true;
 		this.score = 0;
-		this.labelScore = game.add.text(20,20,"0",{font:"30px Arial", fill:"#ffffff"});
-		
-		var spaceKey = this.game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
-		spaceKey.onDown.add(this.jump,this);
-	},
-	
-	update: function(){
-		if (this.bird.inWorld ==false) {
-			this.restartGame();
-		}
-		if (this.bird.angle<20) {
-			this.bird.angle+=1;
-			
-		}
-		game.physics.arcade.overlap(this.bird, this.pipes, this.hitPipe,null,this);
-		
-	},
-	
-	jump: function(){
-		if (this.bird.alive ==false) {
-			return;
-		}
-		this.jumpSound.play();
-		this.bird.body.velocity.y = -350;
-		
-		var animation = game.add.tween(this.bird);
-		animation.to({angle:-20},100);
-		
-		animation.start();
-	},
-	
-	restartGame: function(){
-		game.state.start('main');
-	},
-	
-	addOnePipe: function(x,y) {
-		var pipe = this.pipes.getFirstDead();
-		
-		pipe.reset(x,y);
-		
-		pipe.body.velocity.x=-200;
-		
-		pipe.checkWorldBounds=true;
-		pipe.outOfBoundsKill=true;
-	},
-	
-	addRowOfPipes: function(){
-		//pick the hole
-		var hole = Math.floor(Math.random()*5)+1;
-		
-		//add 6 pipes
-		for (var i=0;i<8;i++) {
-			if(i!=hole && i!=hole+1){
-				this.addOnePipe(400,i*60+10)
-			}
-			
-		}	
-		this.score +=1;
-		this.labelScore.text =this.score;
-	},
-	
-	hitPipe: function(){
-		if (this.bird.alive ==false) {
-			return;
-		}
-		
-		this.bird.alive=false;
-		
-		game.time.events.remove(this.timer);
-		
-		this.pipes.forEachAlive(function(p){
-			p.body.velocity.x=0;
-		},this);
-	},
-	
-	
-};
+		this.bg.autoScroll(-(this.gameSpeed / 10), 0);
+		this.ground.autoScroll(-this.gameSpeed, 0);
+		this.bird.body.gravity.y = 1150; //鸟的重力
+		this.readyText.destroy();
+		this.playTip.destroy();
+		game.input.onDown.add(this.fly, this);
+		game.time.events.start();
+	}
 
-game.state.add('main',mainState);
-game.state.start('main');
+	this.fly = function() {
+		this.bird.body.velocity.y = -350; //飞翔，实质上就是给鸟设一个向上的速度
+		game.add.tween(this.bird).to({
+			angle: -30
+		}, 100, null, true, 0, 0, false); //上升时头朝上的动画
+		this.soundFly.play(); //播放飞翔的音效
+	}
+
+	this.generatePipes = function(gap) {
+		gap = gap || 100; //上下管道之间的间隙宽度
+		var position = (505 - 320 - gap) + Math.floor((505 - 112 - 30 - gap - 505 + 320 + gap) * Math.random()); //计算出一个上下管道之间的间隙的随机位置
+		var topPipeY = position - 360; //上方管道的位置
+		var bottomPipeY = position + gap; //下方管道的位置
+
+		if (this.resetPipe(topPipeY, bottomPipeY)) return; //如果有出了边界的管道，则重置他们，不再制造新的管道了,达到循环利用的目的
+
+		var topPipe = game.add.sprite(game.width, topPipeY, 'pipe', 0, this.pipeGroup); //上方的管道
+		var bottomPipe = game.add.sprite(game.width, bottomPipeY, 'pipe', 1, this.pipeGroup); //下方的管道
+		this.pipeGroup.setAll('checkWorldBounds', true); //边界检测
+		this.pipeGroup.setAll('outOfBoundsKill', true); //出边界后自动kill
+		this.pipeGroup.setAll('body.velocity.x', -this.gameSpeed); //设置管道运动的速度
+	}
+
+	this.resetPipe = function(topPipeY, bottomPipeY) { //重置出了边界的管道，做到回收利用
+		var i = 0;
+		this.pipeGroup.forEachDead(function(pipe) { //对组调用forEachDead方法来获取那些已经出了边界，也就是“死亡”了的对象
+			if (pipe.y <= 0) { //是上方的管道
+				pipe.reset(game.width, topPipeY); //重置到初始位置
+				pipe.hasScored = false; //重置为未得分
+			} else { //是下方的管道
+				pipe.reset(game.width, bottomPipeY); //重置到初始位置
+			}
+			pipe.body.velocity.x = -this.gameSpeed; //设置管道速度
+			i++;
+		}, this);
+		return i == 2; //如果 i==2 代表有一组管道已经出了边界，可以回收这组管道了
+	}
+
+	this.checkScore = function(pipe) { //负责分数的检测和更新
+		if (!pipe.hasScored && pipe.y <= 0 && pipe.x <= this.bird.x - 17 - 54) {
+			pipe.hasScored = true;
+			this.scoreText.text = ++this.score;
+			this.soundScore.play();
+			return true;
+		}
+		return false;
+	}
+
+	this.hitCeil = function() { //撞了天花板
+		this.soundHitPipe.play();
+		this.gameOver();
+	}
+
+	this.hitPipe = function() {
+		if (this.gameIsOver) return;
+		this.soundHitPipe.play();
+		this.gameOver();
+	}
+	this.hitGround = function() {
+		if (this.hasHitGround) return; //已经撞击过地面
+		this.hasHitGround = true;
+		this.soundHitGround.play();
+		this.gameOver(true);
+	}
+	this.gameOver = function(show_text) {
+		this.gameIsOver = true;
+		this.stopGame();
+		if (show_text) this.showGameOverText();
+	};
+
+	this.stopGame = function() {
+		this.bg.stopScroll();
+		this.ground.stopScroll();
+		this.pipeGroup.forEachExists(function(pipe) {
+			pipe.body.velocity.x = 0;
+		}, this);
+		this.bird.animations.stop('fly', 0);
+		game.input.onDown.remove(this.fly, this);
+		game.time.events.stop(true);
+	}
+
+	this.showGameOverText = function() {
+		this.scoreText.destroy();
+		game.bestScore = game.bestScore || 0;
+		if (this.score > game.bestScore) game.bestScore = this.score; //最好分数
+		this.gameOverGroup = game.add.group(); //添加一个组
+		var gameOverText = this.gameOverGroup.create(game.width / 2, 0, 'game_over'); //game over 文字图片
+		var scoreboard = this.gameOverGroup.create(game.width / 2, 70, 'score_board'); //分数板
+		var currentScoreText = game.add.bitmapText(game.width / 2 + 60, 105, 'flappy_font', this.score + '', 20, this.gameOverGroup); //当前分数
+		var bestScoreText = game.add.bitmapText(game.width / 2 + 60, 153, 'flappy_font', game.bestScore + '', 20, this.gameOverGroup); //最好分数
+		var replayBtn = game.add.button(game.width / 2, 210, 'btn', function() { //重玩按钮
+			game.state.start('play');
+		}, this, null, null, null, null, this.gameOverGroup);
+		gameOverText.anchor.setTo(0.5, 0);
+		scoreboard.anchor.setTo(0.5, 0);
+		replayBtn.anchor.setTo(0.5, 0);
+		this.gameOverGroup.y = 30;
+	}
+}
+
+//添加state到游戏
+game.state.add('boot', game.States.boot);
+game.state.add('preload', game.States.preload);
+game.state.add('menu', game.States.menu);
+game.state.add('play', game.States.play);
+game.state.start('boot'); //启动游戏
