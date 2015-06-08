@@ -1,8 +1,6 @@
 var game = new Phaser.Game(320, 505, Phaser.AUTO, 'game'); //实例化game
 game.States = {}; //存放state对象
 
-
-
 game.States.boot = function() {
 	this.preload = function() {
 		if (!game.device.desktop) {
